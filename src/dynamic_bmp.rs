@@ -9,6 +9,7 @@ use embedded_graphics::{
 use crate::{
     header::{Bpp, ChannelMasks},
     raw_bmp::RawBmp,
+    reader::{BmpReader, NullReader},
     ParseError,
 };
 
@@ -23,16 +24,20 @@ use crate::{
 /// included in embedded-graphics.
 ///
 /// [`Bmp`]: struct.Bmp.html
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct DynamicBmp<'a, C> {
-    raw_bmp: RawBmp<'a>,
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct DynamicBmp<'a, C, R = NullReader>
+where
+    R: BmpReader,
+{
+    raw_bmp: RawBmp<'a, R>,
     color_type: ColorType,
     target_color_type: PhantomData<C>,
 }
 
-impl<'a, C> DynamicBmp<'a, C>
+impl<'a, C, R> DynamicBmp<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888> + From<Gray8>,
+    R: BmpReader,
 {
     /// Creates a bitmap object from a byte slice.
     pub fn from_slice(bytes: &'a [u8]) -> Result<Self, ParseError> {
@@ -81,14 +86,15 @@ where
     /// The [`RawBmp`] instance can be used to access lower level information about the BMP file.
     ///
     /// [`RawBmp`]: struct.RawBmp.html
-    pub fn as_raw(&self) -> &RawBmp<'a> {
+    pub fn as_raw(&self) -> &RawBmp<'a, R> {
         &self.raw_bmp
     }
 }
 
-impl<C> ImageDrawable for DynamicBmp<'_, C>
+impl<C, R> ImageDrawable for DynamicBmp<'_, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888> + From<Gray8>,
+    R: BmpReader,
 {
     type Color = C;
 
@@ -112,9 +118,10 @@ where
     }
 }
 
-impl<C> OriginDimensions for DynamicBmp<'_, C>
+impl<C, R> OriginDimensions for DynamicBmp<'_, C, R>
 where
     C: PixelColor,
+    R: BmpReader,
 {
     fn size(&self) -> Size {
         self.raw_bmp.size()

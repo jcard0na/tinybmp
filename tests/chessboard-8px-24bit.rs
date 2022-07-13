@@ -5,7 +5,7 @@ const DATA: &[u8] = include_bytes!("./chessboard-8px-24bit.bmp");
 
 #[test]
 fn chessboard_8px_24bit() {
-    let bmp = RawBmp::from_slice(DATA).expect("Failed to parse");
+    let bmp: RawBmp = RawBmp::from_slice(DATA).expect("Failed to parse");
 
     assert_eq!(
         bmp.header(),
@@ -28,7 +28,7 @@ fn chessboard_8px_24bit_truncated_iter() {
     // corrupt data by removing the last 10 bytes
     let truncated_data = &DATA[..DATA.len() - 10];
 
-    let bmp = RawBmp::from_slice(truncated_data).expect("Failed to parse");
+    let bmp: RawBmp = RawBmp::from_slice(truncated_data).expect("Failed to parse");
 
     assert_eq!(
         bmp.header(),
@@ -66,7 +66,7 @@ fn chessboard_8px_24bit_truncated_iter() {
 
 #[test]
 fn chessboard_8px_24bit_iter() {
-    let bmp = RawBmp::from_slice(DATA).expect("Failed to parse");
+    let bmp: RawBmp = RawBmp::from_slice(DATA).expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();
 

@@ -3,15 +3,16 @@ use embedded_graphics::prelude::*;
 use crate::{
     header::{Bpp, RowOrder},
     raw_bmp::RawBmp,
+    reader::BmpReader,
 };
 
 /// Iterator over individual BMP pixels.
 ///
 /// Each pixel is returned as a `u32` regardless of the bit depth of the source image.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct RawPixels<'a, 'b> {
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct RawPixels<'a, 'b, R: BmpReader> {
     /// Reference to original BMP image.
-    pub(crate) raw_bmp: &'a RawBmp<'b>,
+    pub(crate) raw_bmp: &'a RawBmp<'b, R>,
 
     /// Image pixel data as a byte slice, little endian ordering.
     pixel_data: &'b [u8],
@@ -25,8 +26,11 @@ pub struct RawPixels<'a, 'b> {
     bit_idx: usize,
 }
 
-impl<'a, 'b> RawPixels<'a, 'b> {
-    pub(crate) fn new(raw_bmp: &'a RawBmp<'b>) -> Self {
+impl<'a, 'b, R> RawPixels<'a, 'b, R>
+where
+    R: BmpReader,
+{
+    pub(crate) fn new(raw_bmp: &'a RawBmp<'b, R>) -> Self {
         Self {
             raw_bmp,
             pixel_data: raw_bmp.image_data(),
@@ -36,7 +40,10 @@ impl<'a, 'b> RawPixels<'a, 'b> {
     }
 }
 
-impl Iterator for RawPixels<'_, '_> {
+impl<R> Iterator for RawPixels<'_, '_, R>
+where
+    R: BmpReader,
+{
     type Item = RawPixel;
 
     fn next(&mut self) -> Option<Self::Item> {

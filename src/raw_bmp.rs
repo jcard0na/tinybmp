@@ -5,12 +5,16 @@ use crate::{
     header::{Bpp, Header},
     pixels::Pixels,
     raw_pixels::RawPixels,
+    reader::{BmpReader, NullReader},
     ParseError, RawPixel,
 };
 
 /// A BMP-format bitmap.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct RawBmp<'a> {
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct RawBmp<'a, R = NullReader>
+where
+    R: BmpReader,
+{
     /// Image header.
     header: Header,
 
@@ -19,9 +23,15 @@ pub struct RawBmp<'a> {
 
     /// Image data.
     image_data: &'a [u8],
+
+    /// Reader
+    reader: Option<&'a R>,
 }
 
-impl<'a> RawBmp<'a> {
+impl<'a, R> RawBmp<'a, R>
+where
+    R: BmpReader,
+{
     /// Create a bitmap object from a byte slice.
     ///
     /// The created object keeps a shared reference to the input and does not dynamically allocate
@@ -44,6 +54,7 @@ impl<'a> RawBmp<'a> {
             header,
             color_table,
             image_data,
+            reader: None,
         })
     }
 
@@ -78,7 +89,7 @@ impl<'a> RawBmp<'a> {
     /// values into the color specified by `C` use [`pixels`] instead.
     ///
     /// [`pixels`]: #method.pixels
-    pub fn pixels<'b>(&'b self) -> RawPixels<'b, 'a> {
+    pub fn pixels<'b>(&'b self) -> RawPixels<'b, 'a, R> {
         RawPixels::new(self)
     }
 

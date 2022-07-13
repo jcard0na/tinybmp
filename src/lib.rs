@@ -50,7 +50,7 @@
 //!
 //! // Load BMP image with unknown color format.
 //! // Note: There is no need to explicitly specify the color type.
-//! let bmp = DynamicBmp::from_slice(bmp_data).unwrap();
+//! let bmp:DynamicBmp<Rgb565> = DynamicBmp::from_slice(bmp_data).unwrap();
 //!
 //! // Draw the image with the top left corner at (10, 20) by wrapping it in
 //! // an embedded-graphics `Image`.
@@ -69,7 +69,7 @@
 //! use embedded_graphics::prelude::*;
 //! use tinybmp::{RawBmp, Bpp, Header, RawPixel, RowOrder};
 //!
-//! let bmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
+//! let bmp:RawBmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
 //!     .expect("Failed to parse BMP image");
 //!
 //! // Read the BMP header
@@ -96,6 +96,58 @@
 //! assert_eq!(pixels.len(), 8 * 8);
 //! ```
 //!
+//! ## Loading an image through a reader trait to reduce RAM footpring
+//!
+//! The [`Bmp`] struct provides a way to register a reader function to avoid the
+//! need to allocate the image in a slice.  To use this approach, a struct must
+//! be provided that implements the [`BmpReader`] trait.  The struct is passed
+//! to `Bmp::from_reader`.  When `draw` is invoked, the image pixels will be
+//! retrieved by calling the `reader()` function.  This functionality was
+//! implemented to read from SPI flash memories but could be used anytime a
+//! full-image slice in RAM cannot be used.
+//!
+//! ```rust
+//! # fn main() -> Result<(), core::convert::Infallible> {
+//! use embedded_graphics::prelude::*;
+//! # use embedded_graphics::mock_display::MockDisplay;
+//! # use embedded_graphics::pixelcolor::BinaryColor;
+//! # use embedded_graphics::image::Image;
+//! use tinybmp::{Bmp, reader::BmpReader, Bpp, Header, RowOrder};
+//!
+//! # let mut display: MockDisplay<BinaryColor> = MockDisplay::default();
+//!
+//! // Example struct
+//! struct FileInFlash<'a> {
+//!     // offset of start of file into SPI memory
+//!     offset: u32,
+//!     // total size of BMP file
+//!     file_size: u32,
+//!     // slice containing the bmp header.  Needs to be populated before
+//!     // invoking Bmp::from_reader
+//!     header: &'a mut [u8],
+//! }
+//!
+//! impl BmpReader for FileInFlash<'_> {
+//!     fn get(&self, image_offset: usize) -> Option<u8> {
+//!         // Use self.offest and file_offset to calculate address in
+//!         // flash and read the requested value.
+//!         todo!()
+//!     }
+//! }
+//!
+//! // Normally this would be read from flash
+//! let mut header = [10u8; 128];
+//! let reader = FileInFlash { header: &mut header, offset : 0, file_size : 5000 };
+//!
+//! let bmp = Bmp::<BinaryColor, FileInFlash>::from_reader(&reader)
+//!     .expect("Failed to parse BMP image");
+//!
+//!
+//! // Draw the image with the top left corner at (10, 20) by wrapping it in
+//! // an embedded-graphics `Image`.
+//! Image::new(&bmp, Point::new(10, 20)).draw(&mut display)?;
+//! # Ok::<(), core::convert::Infallible>(()) }
+//! ```
 //! [`embedded-graphics`]: https://crates.io/crates/embedded-graphics
 //! [`Header`]: ./header/struct.Header.html
 //! [`Bmp`]: ./struct.Bmp.html
@@ -113,6 +165,7 @@
 use core::marker::PhantomData;
 
 use embedded_graphics::{prelude::*, primitives::Rectangle};
+use reader::{BmpReader, NullReader};
 
 mod color_table;
 mod dynamic_bmp;
@@ -121,6 +174,7 @@ mod parser;
 mod pixels;
 mod raw_bmp;
 mod raw_pixels;
+pub mod reader;
 
 pub use crate::{
     dynamic_bmp::DynamicBmp,
@@ -131,15 +185,19 @@ pub use crate::{
 };
 
 /// A BMP-format bitmap
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct Bmp<'a, C> {
-    raw_bmp: RawBmp<'a>,
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct Bmp<'a, C, R = NullReader>
+where
+    R: BmpReader,
+{
+    raw_bmp: RawBmp<'a, R>,
     color_type: PhantomData<C>,
 }
 
-impl<'a, C> Bmp<'a, C>
+impl<'a, C, R> Bmp<'a, C, R>
 where
     C: PixelColor,
+    R: BmpReader,
 {
     /// Creates a bitmap object from a byte slice.
     ///
@@ -174,7 +232,7 @@ where
     }
 
     /// Returns an iterator over the pixels in this image.
-    pub fn pixels<'b>(&'b self) -> Pixels<'b, 'a, C> {
+    pub fn pixels<'b>(&'b self) -> Pixels<'b, 'a, C, R> {
         Pixels::new(self.raw_bmp.pixels())
     }
 
@@ -183,14 +241,24 @@ where
     /// The [`RawBmp`] instance can be used to access lower level information about the BMP file.
     ///
     /// [`RawBmp`]: struct.RawBmp.html
-    pub fn as_raw(&self) -> &RawBmp<'a> {
+    pub fn as_raw(&self) -> &RawBmp<'a, R> {
         &self.raw_bmp
+    }
+
+    /// Creates a bitmap object using a reader helper struct
+    pub fn from_reader(_reader: &'a R) -> Result<Self, ParseError> {
+        let raw_bmp = RawBmp::from_slice(&[0; 100])?;
+        Ok(Self {
+            raw_bmp,
+            color_type: PhantomData,
+        })
     }
 }
 
-impl<C> ImageDrawable for Bmp<'_, C>
+impl<C, R> ImageDrawable for Bmp<'_, C, R>
 where
     C: PixelColor + From<<C as PixelColor>::Raw>,
+    R: BmpReader,
 {
     type Color = C;
 
@@ -209,9 +277,10 @@ where
     }
 }
 
-impl<C> OriginDimensions for Bmp<'_, C>
+impl<C, R> OriginDimensions for Bmp<'_, C, R>
 where
     C: PixelColor,
+    R: BmpReader,
 {
     fn size(&self) -> Size {
         self.raw_bmp.size()

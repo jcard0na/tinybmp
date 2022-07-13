@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn chessboard_8px_1bit() {
-        let bmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-1bit.bmp"))
+        let bmp: RawBmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-1bit.bmp"))
             .expect("Failed to parse");
 
         let color_table = bmp.color_table().unwrap();
@@ -65,8 +65,9 @@ mod tests {
 
     #[test]
     fn chessboard_8px_16bit() {
-        let bmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-color-16bit.bmp"))
-            .expect("Failed to parse");
+        let bmp: RawBmp =
+            RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-color-16bit.bmp"))
+                .expect("Failed to parse");
 
         assert!(
             bmp.color_table().is_none(),
@@ -76,7 +77,7 @@ mod tests {
 
     #[test]
     fn chessboard_8px_24bit() {
-        let bmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
+        let bmp: RawBmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
             .expect("Failed to parse");
 
         assert!(

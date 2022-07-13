@@ -67,10 +67,10 @@ where
 }
 
 fn test_color_pattern_dynamic(data: &[u8]) {
-    let bmp = DynamicBmp::from_slice(data).unwrap();
+    let bmp: DynamicBmp<Rgb565> = DynamicBmp::from_slice(data).unwrap();
     draw_image(bmp).assert_eq(&expected_image_color::<Rgb565>());
 
-    let bmp = DynamicBmp::from_slice(data).unwrap();
+    let bmp: DynamicBmp<Rgb888> = DynamicBmp::from_slice(data).unwrap();
     draw_image(bmp).assert_eq(&expected_image_color::<Rgb888>());
 }
 
@@ -122,11 +122,13 @@ fn colors_grey8() {
 
 #[test]
 fn colors_grey8_dynamic() {
-    let bmp = DynamicBmp::from_slice(include_bytes!("./colors_grey8.bmp")).unwrap();
+    let bmp: DynamicBmp<Rgb565> =
+        DynamicBmp::from_slice(include_bytes!("./colors_grey8.bmp")).unwrap();
     let display = draw_image::<Rgb565, _>(bmp);
     display.assert_eq(&expected_image_gray().map(|c| c.into()));
 
-    let bmp = DynamicBmp::from_slice(include_bytes!("./colors_grey8.bmp")).unwrap();
+    let bmp: DynamicBmp<Rgb888> =
+        DynamicBmp::from_slice(include_bytes!("./colors_grey8.bmp")).unwrap();
     let display = draw_image::<Rgb888, _>(bmp);
     display.assert_eq(&expected_image_gray().map(|c| c.into()));
 }

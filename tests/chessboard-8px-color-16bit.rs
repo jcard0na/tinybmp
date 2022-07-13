@@ -3,7 +3,7 @@ use tinybmp::{Bpp, ChannelMasks, Header, RawBmp, RowOrder};
 
 #[test]
 fn chessboard_8px_color_16bit() {
-    let bmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
+    let bmp: RawBmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
         .expect("Failed to parse");
 
     assert_eq!(
@@ -24,7 +24,7 @@ fn chessboard_8px_color_16bit() {
 
 #[test]
 fn chessboard_8px_color_16bit_iter() {
-    let bmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
+    let bmp: RawBmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
         .expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();

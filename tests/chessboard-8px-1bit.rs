@@ -6,7 +6,7 @@ use tinybmp::{Bmp, Bpp, Header, RawBmp, RowOrder};
 
 #[test]
 fn chessboard_8px_1bit() {
-    let bmp =
+    let bmp: RawBmp =
         RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit.bmp")).expect("Failed to parse");
 
     assert_eq!(
@@ -27,7 +27,7 @@ fn chessboard_8px_1bit() {
 
 #[test]
 fn chessboard_8px_1bit_iter_raw() {
-    let bmp =
+    let bmp: RawBmp =
         RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit.bmp")).expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();
@@ -56,7 +56,7 @@ fn chessboard_8px_1bit_iter_raw() {
 fn chessboard_8px_1bit_iter_inverted_raw() {
     // Inverted image created with Imagemagick command:
     // convert chessboard-8px-1bit.bmp -negate -type bilevel chessboard-8px-1bit-inverted.bmp
-    let bmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit-inverted.bmp"))
+    let bmp: RawBmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit-inverted.bmp"))
         .expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();

@@ -2,21 +2,24 @@ use core::marker::PhantomData;
 
 use embedded_graphics::prelude::*;
 
-use crate::{raw_pixels::RawPixels, RawPixel};
+use crate::{raw_pixels::RawPixels, reader::BmpReader, RawPixel};
 
 /// Iterator over the pixels in a BMP image.
 ///
 /// See the [`pixels`] method documentation for more information.
 ///
 /// [`pixels`]: struct.Bmp.html#method.pixels
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct Pixels<'a, 'b, C> {
-    raw: RawPixels<'a, 'b>,
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct Pixels<'a, 'b, C, R: BmpReader> {
+    raw: RawPixels<'a, 'b, R>,
     color_type: PhantomData<C>,
 }
 
-impl<'a, 'b, C> Pixels<'a, 'b, C> {
-    pub(crate) fn new(raw: RawPixels<'a, 'b>) -> Self {
+impl<'a, 'b, C, R> Pixels<'a, 'b, C, R>
+where
+    R: BmpReader,
+{
+    pub(crate) fn new(raw: RawPixels<'a, 'b, R>) -> Self {
         Self {
             raw,
             color_type: PhantomData,
@@ -24,9 +27,10 @@ impl<'a, 'b, C> Pixels<'a, 'b, C> {
     }
 }
 
-impl<C> Iterator for Pixels<'_, '_, C>
+impl<C, R> Iterator for Pixels<'_, '_, C, R>
 where
     C: PixelColor + From<<C as PixelColor>::Raw>,
+    R: BmpReader,
 {
     type Item = Pixel<C>;
 
