@@ -2,8 +2,11 @@ use crate::{
     color_table::ColorTable,
     header::{Bpp, Header},
     raw_iter::RawPixels,
-    ChannelMasks, ParseError,
+    reader::SliceReader,
+    BmpReader, ChannelMasks, ParseError,
 };
+
+const FIXED_PORTION_OF_BMP_HEADER_SIZE: usize = 14;
 
 /// Low-level access to BMP image data.
 ///
@@ -13,7 +16,7 @@ use crate::{
 /// [`pixels`](Self::pixels) will instead return the color indices, that can be looked up manually
 /// using the [`ColorTable`] struct.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct RawBmp<'a> {
+pub struct RawBmp<'a, R = SliceReader<'a>> {
     /// Image header.
     header: Header,
 
@@ -25,9 +28,12 @@ pub struct RawBmp<'a> {
 
     /// Image data.
     image_data: &'a [u8],
+
+    /// Image reader
+    image_reader: Option<&'a R>,
 }
 
-impl<'a> RawBmp<'a> {
+impl<'a, R> RawBmp<'a, R> {
     /// Create a bitmap object from a byte slice.
     ///
     /// The created object keeps a shared reference to the input and does not dynamically allocate
@@ -48,6 +54,41 @@ impl<'a> RawBmp<'a> {
             color_type,
             color_table,
             image_data,
+            image_reader: None,
+        })
+    }
+
+    /// Create a bitmap object from a reader struct.
+    ///
+    /// Takes a reader and a buffer large enough to hold the full BMP header.
+    ///
+    // Implementation Note: I tried to keep the header_buffer inside the RawBmp
+    // struct, but failed as rust does not (yet) support fields keeping
+    // reference to other fields inside the same struct.
+    pub fn from_reader(reader: &'a R, header_buffer: &'a mut [u8]) -> Result<Self, ParseError>
+    where
+        R: BmpReader<'a>,
+    {
+        let mut buffer = [0u8; FIXED_PORTION_OF_BMP_HEADER_SIZE];
+        let _ = reader.read(0..FIXED_PORTION_OF_BMP_HEADER_SIZE, &mut buffer)?;
+        let (_remaining, (_file_size, image_data_start)) = Header::parse_size(&buffer)?;
+
+        if image_data_start > header_buffer.len() {
+            return Err(ParseError::UnsupportedHeaderLength(image_data_start as u32));
+        }
+
+        let _ = reader.read(0..image_data_start, header_buffer)?;
+        // Note: &*header_buffer changes the reference to immutable
+        let (_remaining, (header, color_table)) = Header::parse(&*header_buffer)?;
+
+        let color_type = ColorType::from_header(&header)?;
+
+        Ok(Self {
+            header,
+            color_type,
+            color_table,
+            image_data: &[],
+            image_reader: Some(reader),
         })
     }
 
@@ -71,7 +112,7 @@ impl<'a> RawBmp<'a> {
     /// The iterator returns the raw pixel colors as [`u32`] values.  To automatically convert the
     /// raw values into [`embedded_graphics`] color types use [`Bmp::pixels`](crate::Bmp::pixels)
     /// instead.
-    pub fn pixels(&self) -> RawPixels<'_> {
+    pub fn pixels(&self) -> RawPixels<'_, R> {
         RawPixels::new(self)
     }
 }

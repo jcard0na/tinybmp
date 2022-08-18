@@ -2,7 +2,7 @@ use tinybmp::RawBmp;
 
 #[test]
 fn coordinates() {
-    let bmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
+    let bmp: RawBmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-color-16bit.bmp"))
         .expect("Failed to parse");
 
     let pixels: Vec<_> = bmp

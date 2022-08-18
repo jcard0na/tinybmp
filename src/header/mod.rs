@@ -110,16 +110,7 @@ impl Header {
     pub(crate) fn parse(
         input: &[u8],
     ) -> Result<(&[u8], (Header, Option<ColorTable<'_>>)), ParseError> {
-        // File header
-        let (input, magic) = take::<2>(input)?;
-        if &magic != b"BM" {
-            return Err(ParseError::InvalidFileSignature(magic));
-        }
-
-        let (input, file_size) = le_u32(input)?;
-        let (input, _reserved_1) = le_u16(input)?;
-        let (input, _reserved_2) = le_u16(input)?;
-        let (input, image_data_start) = le_u32(input)?;
+        let (input, (file_size, image_data_start)) = Header::parse_size(input)?;
 
         // DIB header
         let (input, dib_header) = DibHeader::parse(input)?;
@@ -138,7 +129,7 @@ impl Header {
             (
                 Header {
                     file_size,
-                    image_data_start: image_data_start as usize,
+                    image_data_start,
                     image_size: dib_header.image_size,
                     image_data_len: dib_header.image_data_len,
                     bpp: dib_header.bpp,
@@ -148,6 +139,23 @@ impl Header {
                 color_table,
             ),
         ))
+    }
+
+    /// Parses the fixed size portion of the BMP header and
+    /// returns the file size and the start of image data
+    pub(crate) fn parse_size(input: &[u8]) -> Result<(&[u8], (u32, usize)), ParseError> {
+        // File header
+        let (input, magic) = take::<2>(input)?;
+        if &magic != b"BM" {
+            return Err(ParseError::InvalidFileSignature(magic));
+        }
+
+        let (input, file_size) = le_u32(input)?;
+        let (input, _reserved_1) = le_u16(input)?;
+        let (input, _reserved_2) = le_u16(input)?;
+        let (input, image_data_start) = le_u32(input)?;
+
+        Ok((input, (file_size, image_data_start as usize)))
     }
 
     /// Returns the row length in bytes.

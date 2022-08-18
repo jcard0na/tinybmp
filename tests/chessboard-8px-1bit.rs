@@ -2,11 +2,11 @@ use embedded_graphics::{
     pixelcolor::{BinaryColor, Rgb888},
     prelude::*,
 };
-use tinybmp::{Bmp, Bpp, Header, RawBmp, RowOrder};
+use tinybmp::{Bmp, Bpp, Header, RawBmp, RowOrder, SliceReader};
 
 #[test]
 fn chessboard_8px_1bit() {
-    let bmp =
+    let bmp: RawBmp =
         RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit.bmp")).expect("Failed to parse");
 
     assert_eq!(
@@ -32,8 +32,40 @@ fn chessboard_8px_1bit() {
 }
 
 #[test]
+fn chessboard_8px_1bit_raw_from_reader() {
+    const MAX_SUPPORTED_HEADER_SIZE: usize = 200;
+    let mut buffer = [0u8; MAX_SUPPORTED_HEADER_SIZE];
+    let reader = SliceReader::new(include_bytes!("./chessboard-8px-1bit.bmp"));
+    let bmp: RawBmp =
+        RawBmp::from_reader(&reader, &mut buffer).expect("Failed to parse");
+
+    assert_eq!(
+        bmp.header(),
+        &Header {
+            file_size: 94,
+            image_data_start: 62,
+            bpp: Bpp::Bits1,
+            image_size: Size::new(8, 8),
+            image_data_len: 32,
+            channel_masks: None,
+            row_order: RowOrder::BottomUp,
+        }
+    );
+
+    let color_table = bmp.color_table().unwrap();
+    assert_eq!(color_table.len(), 2);
+    assert_eq!(color_table.get(0), Some(Rgb888::BLACK));
+    assert_eq!(color_table.get(1), Some(Rgb888::WHITE));
+    assert_eq!(color_table.get(2), None);
+
+    // A RawBmp constructed from a reader has no image data
+    assert_eq!(bmp.image_data().len(), 0);
+}
+
+
+#[test]
 fn chessboard_8px_1bit_iter_raw() {
-    let bmp =
+    let bmp: RawBmp =
         RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit.bmp")).expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();
@@ -62,7 +94,7 @@ fn chessboard_8px_1bit_iter_raw() {
 fn chessboard_8px_1bit_iter_inverted_raw() {
     // Inverted image created with Imagemagick command:
     // convert chessboard-8px-1bit.bmp -negate -type bilevel chessboard-8px-1bit-inverted.bmp
-    let bmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit-inverted.bmp"))
+    let bmp:RawBmp = RawBmp::from_slice(include_bytes!("./chessboard-8px-1bit-inverted.bmp"))
         .expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();

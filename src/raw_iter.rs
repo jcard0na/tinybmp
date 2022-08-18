@@ -1,4 +1,4 @@
-use core::{iter, slice};
+use core::{iter, marker::PhantomData, slice};
 
 use embedded_graphics::{
     iterator::raw::RawDataSlice,
@@ -14,21 +14,22 @@ use crate::{
 
 /// Iterator over raw pixel colors.
 #[allow(missing_debug_implementations)]
-pub struct RawColors<'a, R>
+pub struct RawColors<'a, I, R>
 where
-    RawDataSlice<'a, R, LittleEndian>: IntoIterator<Item = R>,
+    RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
 {
     rows: slice::ChunksExact<'a, u8>,
     row_order: RowOrder,
-    current_row: iter::Take<<RawDataSlice<'a, R, LittleEndian> as IntoIterator>::IntoIter>,
+    current_row: iter::Take<<RawDataSlice<'a, I, LittleEndian> as IntoIterator>::IntoIter>,
     width: usize,
+    reader: PhantomData<R>,
 }
 
-impl<'a, R> RawColors<'a, R>
+impl<'a, I, R> RawColors<'a, I, R>
 where
-    RawDataSlice<'a, R, LittleEndian>: IntoIterator<Item = R>,
+    RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
 {
-    pub(crate) fn new(raw_bmp: &'a RawBmp<'a>) -> Self {
+    pub(crate) fn new(raw_bmp: &'a RawBmp<'a, R>) -> Self {
         let header = raw_bmp.header();
 
         let width = header.image_size.width as usize;
@@ -38,15 +39,16 @@ where
             row_order: raw_bmp.header().row_order,
             current_row: RawDataSlice::new(&[]).into_iter().take(0),
             width,
+            reader: PhantomData,
         }
     }
 }
 
-impl<'a, R> Iterator for RawColors<'a, R>
+impl<'a, I, R> Iterator for RawColors<'a, I, R>
 where
-    RawDataSlice<'a, R, LittleEndian>: IntoIterator<Item = R>,
+    RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
 {
-    type Item = R;
+    type Item = I;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.current_row.next().or_else(|| {
@@ -62,26 +64,27 @@ where
     }
 }
 
-enum DynamicRawColors<'a> {
-    Bpp1(RawColors<'a, RawU1>),
-    Bpp4(RawColors<'a, RawU4>),
-    Bpp8(RawColors<'a, RawU8>),
-    Bpp16(RawColors<'a, RawU16>),
-    Bpp24(RawColors<'a, RawU24>),
-    Bpp32(RawColors<'a, RawU32>),
+enum DynamicRawColors<'a, R> {
+    Bpp1(RawColors<'a, RawU1, R>),
+    Bpp4(RawColors<'a, RawU4, R>),
+    Bpp8(RawColors<'a, RawU8, R>),
+    Bpp16(RawColors<'a, RawU16, R>),
+    Bpp24(RawColors<'a, RawU24, R>),
+    Bpp32(RawColors<'a, RawU32, R>),
 }
 
 /// Iterator over individual BMP pixels.
 ///
 /// Each pixel is returned as a `u32` regardless of the bit depth of the source image.
 #[allow(missing_debug_implementations)]
-pub struct RawPixels<'a> {
-    colors: DynamicRawColors<'a>,
+pub struct RawPixels<'a, R> {
+    colors: DynamicRawColors<'a, R>,
     points: rectangle::Points,
+    reader: PhantomData<R>,
 }
 
-impl<'a> RawPixels<'a> {
-    pub(crate) fn new(raw_bmp: &'a RawBmp<'a>) -> Self {
+impl<'a, R> RawPixels<'a, R> {
+    pub(crate) fn new(raw_bmp: &'a RawBmp<'a, R>) -> Self {
         let header = raw_bmp.header();
 
         let colors = match header.bpp {
@@ -94,11 +97,15 @@ impl<'a> RawPixels<'a> {
         };
         let points = Rectangle::new(Point::zero(), header.image_size).points();
 
-        Self { colors, points }
+        Self {
+            colors,
+            points,
+            reader: PhantomData,
+        }
     }
 }
 
-impl Iterator for RawPixels<'_> {
+impl<R> Iterator for RawPixels<'_, R> {
     type Item = RawPixel;
 
     fn next(&mut self) -> Option<Self::Item> {

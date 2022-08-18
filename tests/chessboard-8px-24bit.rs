@@ -1,11 +1,11 @@
 use embedded_graphics::prelude::*;
-use tinybmp::{Bpp, Header, RawBmp, RowOrder};
+use tinybmp::{Bpp, Header, SliceReader, RawBmp, RowOrder};
 
 const DATA: &[u8] = include_bytes!("./chessboard-8px-24bit.bmp");
 
 #[test]
 fn chessboard_8px_24bit() {
-    let bmp = RawBmp::from_slice(DATA).expect("Failed to parse");
+    let bmp = RawBmp::<SliceReader>::from_slice(DATA).expect("Failed to parse");
 
     assert_eq!(
         bmp.header(),
@@ -30,7 +30,7 @@ fn chessboard_8px_24bit() {
 
 #[test]
 fn chessboard_8px_24bit_iter() {
-    let bmp = RawBmp::from_slice(DATA).expect("Failed to parse");
+    let bmp = RawBmp::<SliceReader>::from_slice(DATA).expect("Failed to parse");
 
     let pixels: Vec<u32> = bmp.pixels().map(|pixel| pixel.color).collect();
 

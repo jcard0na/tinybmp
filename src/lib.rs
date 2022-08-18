@@ -23,7 +23,7 @@
 //! let bmp_data = include_bytes!("../tests/chessboard-8px-color-16bit.bmp");
 //!
 //! // Parse the BMP file.
-//! let bmp = Bmp::from_slice(bmp_data).unwrap();
+//! let bmp: Bmp<Rgb565> = Bmp::from_slice(bmp_data).unwrap();
 //!
 //! // Draw the image with the top left corner at (10, 20) by wrapping it in
 //! // an embedded-graphics `Image`.
@@ -68,7 +68,7 @@
 //! use embedded_graphics::prelude::*;
 //! use tinybmp::{RawBmp, Bpp, Header, RawPixel, RowOrder};
 //!
-//! let bmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
+//! let bmp: RawBmp = RawBmp::from_slice(include_bytes!("../tests/chessboard-8px-24bit.bmp"))
 //!     .expect("Failed to parse BMP image");
 //!
 //! // Read the BMP header
@@ -151,6 +151,7 @@ mod iter;
 mod parser;
 mod raw_bmp;
 mod raw_iter;
+mod reader;
 
 use raw_bmp::ColorType;
 use raw_iter::RawColors;
@@ -160,17 +161,19 @@ pub use header::{Bpp, ChannelMasks, Header, RowOrder};
 pub use iter::Pixels;
 pub use raw_bmp::RawBmp;
 pub use raw_iter::{RawPixel, RawPixels};
+pub use reader::{BmpReader, BmpReaderError, SliceReader};
 
 /// A BMP-format bitmap.
 ///
 /// See the [crate-level documentation](crate) for more information.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct Bmp<'a, C> {
-    raw_bmp: RawBmp<'a>,
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct Bmp<'a, C, R = SliceReader<'a>> {
+    raw_bmp: RawBmp<'a, R>,
     color_type: PhantomData<C>,
+    reader: PhantomData<R>,
 }
 
-impl<'a, C> Bmp<'a, C>
+impl<'a, C, R> Bmp<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
 {
@@ -184,6 +187,7 @@ where
         Ok(Self {
             raw_bmp,
             color_type: PhantomData,
+            reader: PhantomData,
         })
     }
 
@@ -191,19 +195,19 @@ where
     ///
     /// The iterator always starts at the top left corner of the image, regardless of the row order
     /// of the BMP file. The coordinate of the first pixel is `(0, 0)`.
-    pub fn pixels(&self) -> Pixels<'_, C> {
+    pub fn pixels(&self) -> Pixels<'_, C, R> {
         Pixels::new(self)
     }
 
     /// Returns a reference to the raw BMP image.
     ///
     /// The [`RawBmp`] instance can be used to access lower level information about the BMP file.
-    pub fn as_raw(&self) -> &RawBmp<'a> {
+    pub fn as_raw(&self) -> &RawBmp<'a, R> {
         &self.raw_bmp
     }
 }
 
-impl<C> ImageDrawable for Bmp<'_, C>
+impl<C, R> ImageDrawable for Bmp<'_, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
 {
@@ -224,7 +228,7 @@ where
                         color_table.get(1).map(Into::into).unwrap_or(fallback_color),
                     ];
 
-                    let colors = RawColors::<RawU1>::new(&self.raw_bmp).map(|index| {
+                    let colors = RawColors::<RawU1, R>::new(&self.raw_bmp).map(|index| {
                         color_table
                             .get(usize::from(index.into_inner()))
                             .copied()
@@ -239,7 +243,7 @@ where
                 if let Some(color_table) = self.raw_bmp.color_table() {
                     let fallback_color = C::from(Rgb888::BLACK);
 
-                    let colors = RawColors::<RawU4>::new(&self.raw_bmp).map(|index| {
+                    let colors = RawColors::<RawU4, R>::new(&self.raw_bmp).map(|index| {
                         color_table
                             .get(u32::from(index.into_inner()))
                             .map(Into::into)
@@ -255,7 +259,7 @@ where
                 if let Some(color_table) = self.raw_bmp.color_table() {
                     let fallback_color = C::from(Rgb888::BLACK);
 
-                    let colors = RawColors::<RawU8>::new(&self.raw_bmp).map(|index| {
+                    let colors = RawColors::<RawU8, R>::new(&self.raw_bmp).map(|index| {
                         color_table
                             .get(u32::from(index.into_inner()))
                             .map(Into::into)
@@ -269,19 +273,19 @@ where
             }
             ColorType::Rgb555 => target.fill_contiguous(
                 &area,
-                RawColors::<RawU16>::new(&self.raw_bmp).map(|raw| Rgb555::from(raw).into()),
+                RawColors::<RawU16, R>::new(&self.raw_bmp).map(|raw| Rgb555::from(raw).into()),
             ),
             ColorType::Rgb565 => target.fill_contiguous(
                 &area,
-                RawColors::<RawU16>::new(&self.raw_bmp).map(|raw| Rgb565::from(raw).into()),
+                RawColors::<RawU16, R>::new(&self.raw_bmp).map(|raw| Rgb565::from(raw).into()),
             ),
             ColorType::Rgb888 => target.fill_contiguous(
                 &area,
-                RawColors::<RawU24>::new(&self.raw_bmp).map(|raw| Rgb888::from(raw).into()),
+                RawColors::<RawU24, R>::new(&self.raw_bmp).map(|raw| Rgb888::from(raw).into()),
             ),
             ColorType::Xrgb8888 => target.fill_contiguous(
                 &area,
-                RawColors::<RawU32>::new(&self.raw_bmp)
+                RawColors::<RawU32, R>::new(&self.raw_bmp)
                     .map(|raw| Rgb888::from(RawU24::new(raw.into_inner())).into()),
             ),
         }
@@ -295,7 +299,7 @@ where
     }
 }
 
-impl<C> OriginDimensions for Bmp<'_, C>
+impl<C, R> OriginDimensions for Bmp<'_, C, R>
 where
     C: PixelColor,
 {
@@ -326,6 +330,15 @@ pub enum ParseError {
 
     /// Unsupported channel masks.
     UnsupportedChannelMasks,
+
+    /// BMP reader error
+    BmpReaderError(BmpReaderError),
+}
+
+impl From<BmpReaderError> for ParseError {
+    fn from(error: BmpReaderError) -> Self {
+        Self::BmpReaderError(error)
+    }
 }
 
 #[cfg(test)]

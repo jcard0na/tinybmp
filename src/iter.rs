@@ -14,21 +14,22 @@ use crate::{raw_bmp::ColorType, raw_iter::RawPixels, Bmp, ColorTable, RawPixel};
 ///
 /// See the [`pixels`](Bmp::pixels) method documentation for more information.
 #[allow(missing_debug_implementations)]
-pub struct Pixels<'a, C>
+pub struct Pixels<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
 {
-    raw_pixels: RawPixels<'a>,
+    raw_pixels: RawPixels<'a, R>,
     color_table: Option<&'a ColorTable<'a>>,
     image_color_type: ColorType,
     target_color_type: PhantomData<C>,
+    reader: PhantomData<R>,
 }
 
-impl<'a, C> Pixels<'a, C>
+impl<'a, C, R> Pixels<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
 {
-    pub(crate) fn new(bmp: &'a Bmp<'a, C>) -> Self {
+    pub(crate) fn new(bmp: &'a Bmp<'a, C, R>) -> Self {
         let raw_pixels = RawPixels::new(&bmp.raw_bmp);
 
         Self {
@@ -36,11 +37,12 @@ where
             color_table: bmp.raw_bmp.color_table(),
             image_color_type: bmp.raw_bmp.color_type,
             target_color_type: PhantomData,
+            reader: PhantomData,
         }
     }
 }
 
-impl<C> Iterator for Pixels<'_, C>
+impl<C, R> Iterator for Pixels<'_, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
 {
