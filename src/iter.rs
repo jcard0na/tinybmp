@@ -8,7 +8,7 @@ use embedded_graphics::{
     prelude::*,
 };
 
-use crate::{raw_bmp::ColorType, raw_iter::RawPixels, Bmp, ColorTable, RawPixel};
+use crate::{raw_bmp::ColorType, raw_iter::RawPixels, Bmp, BmpReader, ColorTable, RawPixel};
 
 /// Iterator over the pixels in a BMP image.
 ///
@@ -17,6 +17,7 @@ use crate::{raw_bmp::ColorType, raw_iter::RawPixels, Bmp, ColorTable, RawPixel};
 pub struct Pixels<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
+    R: BmpReader<'a>,
 {
     raw_pixels: RawPixels<'a, R>,
     color_table: Option<&'a ColorTable<'a>>,
@@ -28,6 +29,7 @@ where
 impl<'a, C, R> Pixels<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
+    R: BmpReader<'a>,
 {
     pub(crate) fn new(bmp: &'a Bmp<'a, C, R>) -> Self {
         let raw_pixels = RawPixels::new(&bmp.raw_bmp);
@@ -42,9 +44,10 @@ where
     }
 }
 
-impl<C, R> Iterator for Pixels<'_, C, R>
+impl<'a, C, R> Iterator for Pixels<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
+    R: BmpReader<'a>,
 {
     type Item = Pixel<C>;
 

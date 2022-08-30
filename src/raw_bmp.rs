@@ -2,8 +2,8 @@ use crate::{
     color_table::ColorTable,
     header::{Bpp, Header},
     raw_iter::RawPixels,
-    reader::SliceReader,
-    BmpReader, ChannelMasks, ParseError,
+    reader::{BmpReader, SliceReader},
+    ChannelMasks, ParseError,
 };
 
 const FIXED_PORTION_OF_BMP_HEADER_SIZE: usize = 14;
@@ -30,7 +30,7 @@ pub struct RawBmp<'a, R = SliceReader<'a>> {
     image_data: &'a [u8],
 
     /// Image reader
-    image_reader: Option<&'a R>,
+    pub image_reader: Option<&'a R>,
 }
 
 impl<'a, R> RawBmp<'a, R> {
@@ -112,7 +112,10 @@ impl<'a, R> RawBmp<'a, R> {
     /// The iterator returns the raw pixel colors as [`u32`] values.  To automatically convert the
     /// raw values into [`embedded_graphics`] color types use [`Bmp::pixels`](crate::Bmp::pixels)
     /// instead.
-    pub fn pixels(&self) -> RawPixels<'_, R> {
+    pub fn pixels(&'a self) -> RawPixels<'a, R>
+    where
+        R: BmpReader<'a>,
+    {
         RawPixels::new(self)
     }
 }

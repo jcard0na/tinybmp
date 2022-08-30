@@ -6,10 +6,12 @@ use embedded_graphics::{
     prelude::*,
     primitives::{rectangle, Rectangle},
 };
+use streaming_iterator::{DoubleEndedStreamingIterator, StreamingIterator};
 
 use crate::{
     header::{Bpp, RowOrder},
     raw_bmp::RawBmp,
+    reader::BmpReader,
 };
 
 /// Iterator over raw pixel colors.
@@ -17,25 +19,65 @@ use crate::{
 pub struct RawColors<'a, I, R>
 where
     RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
+    R: BmpReader<'a>,
 {
-    rows: slice::ChunksExact<'a, u8>,
+    rows: ChunkReaderWrapper<'a, R>,
     row_order: RowOrder,
     current_row: iter::Take<<RawDataSlice<'a, I, LittleEndian> as IntoIterator>::IntoIter>,
     width: usize,
     reader: PhantomData<R>,
 }
 
+struct ChunkReaderWrapper<'a, R>
+where
+    R: BmpReader<'a>,
+{
+    iter1: slice::ChunksExact<'a, u8>,
+    iter2: Option<<R as BmpReader<'a>>::IntoIter>,
+}
+
+impl<'a, R> ChunkReaderWrapper<'a, R>
+where
+    R: BmpReader<'a>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+{
+    fn next(&'a mut self) -> Option<&'a [u8]> {
+        match &mut self.iter2 {
+            Some(iter2) => iter2.next(),
+            None => self.iter1.next(),
+        }
+    }
+    fn next_back(&'a mut self) -> Option<&'a [u8]> {
+        match &mut self.iter2 {
+            Some(iter2) => iter2.next_back(),
+            None => self.iter1.next_back(),
+        }
+    }
+}
+
 impl<'a, I, R> RawColors<'a, I, R>
 where
     RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
+    R: BmpReader<'a>,
 {
-    pub(crate) fn new(raw_bmp: &'a RawBmp<'a, R>) -> Self {
+    pub(crate) fn new(raw_bmp: &RawBmp<'a, R>) -> Self {
         let header = raw_bmp.header();
 
         let width = header.image_size.width as usize;
 
+        let iter2 = raw_bmp
+            .image_reader
+            .unwrap()
+            .chunks_exact(header.bytes_per_row())
+            .ok();
+
+        let rows = ChunkReaderWrapper::<R> {
+            iter1: raw_bmp.image_data().chunks_exact(header.bytes_per_row()),
+            iter2,
+        };
+
         Self {
-            rows: raw_bmp.image_data().chunks_exact(header.bytes_per_row()),
+            rows,
             row_order: raw_bmp.header().row_order,
             current_row: RawDataSlice::new(&[]).into_iter().take(0),
             width,
@@ -47,14 +89,16 @@ where
 impl<'a, I, R> Iterator for RawColors<'a, I, R>
 where
     RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
+    R: BmpReader<'a>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
 {
     type Item = I;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.current_row.next().or_else(|| {
             let next_row = match self.row_order {
-                RowOrder::TopDown => self.rows.next(),
-                RowOrder::BottomUp => self.rows.next_back(),
+                RowOrder::TopDown => None, // self.rows.next(),
+                RowOrder::BottomUp => None, // self.rows.next_back(),
             }?;
 
             self.current_row = RawDataSlice::new(next_row).into_iter().take(self.width);
@@ -64,7 +108,7 @@ where
     }
 }
 
-enum DynamicRawColors<'a, R> {
+enum DynamicRawColors<'a, R: BmpReader<'a>> {
     Bpp1(RawColors<'a, RawU1, R>),
     Bpp4(RawColors<'a, RawU4, R>),
     Bpp8(RawColors<'a, RawU8, R>),
@@ -77,13 +121,16 @@ enum DynamicRawColors<'a, R> {
 ///
 /// Each pixel is returned as a `u32` regardless of the bit depth of the source image.
 #[allow(missing_debug_implementations)]
-pub struct RawPixels<'a, R> {
+pub struct RawPixels<'a, R: BmpReader<'a>> {
     colors: DynamicRawColors<'a, R>,
     points: rectangle::Points,
     reader: PhantomData<R>,
 }
 
-impl<'a, R> RawPixels<'a, R> {
+impl<'a, R> RawPixels<'a, R>
+where
+    R: BmpReader<'a>,
+{
     pub(crate) fn new(raw_bmp: &'a RawBmp<'a, R>) -> Self {
         let header = raw_bmp.header();
 
@@ -105,7 +152,11 @@ impl<'a, R> RawPixels<'a, R> {
     }
 }
 
-impl<R> Iterator for RawPixels<'_, R> {
+impl<'a, R> Iterator for RawPixels<'a, R>
+where
+    R: BmpReader<'a>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+{
     type Item = RawPixel;
 
     fn next(&mut self) -> Option<Self::Item> {

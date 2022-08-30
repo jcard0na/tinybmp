@@ -11,9 +11,15 @@ use streaming_iterator::{DoubleEndedStreamingIterator, StreamingIterator};
 /// testing.
 
 /// Helper trait to load BMP images from files.
-pub trait BmpReader<'a> {
+pub trait BmpReader<'a>
+where
+    <Self as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+{
     /// Iterator that will be returned by chunks_exact()
     type IntoIter;
+
+    /// Internal buffer used to store a single image row.
+    const INTERNAL_BUFFER_SIZE: usize;
 
     /// Read a chunk from file into internal buffer
     /// into the provided buffer.
@@ -21,7 +27,7 @@ pub trait BmpReader<'a> {
 
     /// Returns a double ended iterator that can iterate in chunks of size
     /// `stride`
-    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
+    fn chunks_exact(&self, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
 }
 
 /// BmpReader errors
@@ -37,15 +43,15 @@ pub enum BmpReaderError {
     NullReader,
 }
 
-pub trait BmpReaderChunkIterator {
-    // This buffer should be large enough to hold a single row of a BMP image
-    const INTERNAL_BUFFER_SIZE: usize;
+pub trait BmpReaderChunkIterator
+where
+    Self: DoubleEndedStreamingIterator,
+{
 }
 
 // Implementation of the above traits in a reader for memory slices follow
 
 impl BmpReaderChunkIterator for SliceReaderIterator<'_> {
-    const INTERNAL_BUFFER_SIZE: usize = 200;
 }
 
 /// An implementation of the BmpReader that reads from a [u8] slice.  This is
@@ -55,10 +61,13 @@ impl BmpReaderChunkIterator for SliceReaderIterator<'_> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliceReader<'a> {
     image_data: &'a [u8],
+    buffer: [u8; SliceReader::INTERNAL_BUFFER_SIZE],
 }
 
 impl<'a> BmpReader<'a> for SliceReader<'a> {
     type IntoIter = SliceReaderIterator<'a>;
+
+    const INTERNAL_BUFFER_SIZE: usize = 200;
 
     fn read(&self, positions: Range<usize>, buffer: &mut [u8]) -> Result<(), BmpReaderError> {
         let read_size = positions.end - positions.start;
@@ -72,13 +81,12 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
         Ok(())
     }
 
-    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError> {
-        if stride > <Self::IntoIter as BmpReaderChunkIterator>::INTERNAL_BUFFER_SIZE {
+    fn chunks_exact(&self, stride: usize) -> Result<Self::IntoIter, BmpReaderError> {
+        if stride > Self::INTERNAL_BUFFER_SIZE {
             return Err(BmpReaderError::RequestedChunkTooLarge);
         }
         Ok(SliceReaderIterator {
-            reader: self,
-            buffer: [0u8; <Self::IntoIter as BmpReaderChunkIterator>::INTERNAL_BUFFER_SIZE],
+            reader: self.clone(),
             stride,
             // Note advance() will set these indices correctly before
             // get() is invoked.
@@ -92,11 +100,10 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
 
 #[derive(Debug)]
 pub struct SliceReaderIterator<'a> {
-    reader: &'a SliceReader<'a>,
+    reader: SliceReader<'a>,
     index: usize,
     stride: usize,
     rindex: usize,
-    buffer: [u8; <SliceReaderIterator as BmpReaderChunkIterator>::INTERNAL_BUFFER_SIZE],
 }
 
 impl<'a> StreamingIterator for SliceReaderIterator<'a> {
@@ -111,7 +118,10 @@ impl<'a> StreamingIterator for SliceReaderIterator<'a> {
         // Updating the internal buffer from I/O operation will happen here
         // For SliceReaderIterator, we just copy a chunk from the Reader's slice
         let range = self.index..self.index + self.stride;
-        let _ = self.reader.read(range, &mut self.buffer[0..self.stride]);
+
+        let mut buffer = [0u8; SliceReader::INTERNAL_BUFFER_SIZE];
+        let _ = self.reader.read(range, &mut buffer[0..self.stride]);
+        self.reader.buffer[0..self.stride].copy_from_slice(&buffer[0..self.stride]);
         // TODO: handle read errors here
     }
 
@@ -119,7 +129,7 @@ impl<'a> StreamingIterator for SliceReaderIterator<'a> {
         if self.index + self.stride - 1 >= self.rindex {
             return None;
         }
-        Some(&self.buffer[0..self.stride])
+        Some(&self.reader.buffer[0..self.stride])
     }
 
     fn next(&mut self) -> Option<&Self::Item> {
@@ -138,7 +148,9 @@ impl<'a> DoubleEndedStreamingIterator for SliceReaderIterator<'a> {
         // Updating the internal buffer from I/O operation will happen here
         // For SliceReaderIterator, we just copy a chunk from the Reader's slice
         let range = self.rindex..self.rindex + self.stride;
-        let _ = self.reader.read(range, &mut self.buffer[0..self.stride]);
+        let mut buffer = [0u8; SliceReader::INTERNAL_BUFFER_SIZE];
+        let _ = self.reader.read(range, &mut buffer[0..self.stride]);
+        self.reader.buffer[0..self.stride].copy_from_slice(&buffer[0..self.stride]);
         // TODO: handle read errors here
     }
 
@@ -149,14 +161,14 @@ impl<'a> DoubleEndedStreamingIterator for SliceReaderIterator<'a> {
             return None;
         }
         // Updating the internal buffer from I/O operation will happen here
-        Some(&self.buffer[0..self.stride])
+        Some(&self.reader.buffer[0..self.stride])
     }
 }
 
 impl<'a> SliceReader<'a> {
     /// Creates a new slice reader from a given slice containing a BMP image
     pub fn new(slice: &'a [u8]) -> Self {
-        SliceReader { image_data: slice }
+        SliceReader { image_data: slice , buffer: [0u8; SliceReader::INTERNAL_BUFFER_SIZE]}
     }
 }
 

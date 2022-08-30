@@ -162,6 +162,7 @@ pub use iter::Pixels;
 pub use raw_bmp::RawBmp;
 pub use raw_iter::{RawPixel, RawPixels};
 pub use reader::{BmpReader, BmpReaderError, SliceReader};
+use streaming_iterator::DoubleEndedStreamingIterator;
 
 /// A BMP-format bitmap.
 ///
@@ -195,7 +196,10 @@ where
     ///
     /// The iterator always starts at the top left corner of the image, regardless of the row order
     /// of the BMP file. The coordinate of the first pixel is `(0, 0)`.
-    pub fn pixels(&self) -> Pixels<'_, C, R> {
+    pub fn pixels(&'a self) -> Pixels<'a, C, R>
+    where
+        R: BmpReader<'a>,
+    {
         Pixels::new(self)
     }
 
@@ -207,15 +211,17 @@ where
     }
 }
 
-impl<C, R> ImageDrawable for Bmp<'_, C, R>
+impl<'a, C, R> ImageDrawable for Bmp<'a, C, R>
 where
     C: PixelColor + From<Rgb555> + From<Rgb565> + From<Rgb888>,
+    R: BmpReader<'a>,
 {
     type Color = C;
 
     fn draw<D>(&self, target: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
+        <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
     {
         let area = self.bounding_box();
 
