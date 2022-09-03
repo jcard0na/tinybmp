@@ -67,7 +67,7 @@ where
         let iter2 = raw_bmp
             .image_reader
             .unwrap()
-            .chunks_exact(0, header.bytes_per_row())
+            .chunks_exact(header.image_data_start, header.bytes_per_row())
             .ok();
 
         let rows = ChunkReaderWrapper::<R> {
@@ -96,8 +96,8 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.current_row.next().or_else(|| {
             let next_row = match self.row_order {
-                RowOrder::TopDown => None,  // self.rows.next(),
-                RowOrder::BottomUp => None, // self.rows.next_back(),
+                RowOrder::TopDown => self.rows.next().as_deref(),
+                RowOrder::BottomUp => self.rows.next_back().as_deref(),
             }?;
 
             self.current_row = RawDataSlice::new(next_row).into_iter().take(self.width);
