@@ -67,7 +67,7 @@ where
         let iter2 = raw_bmp
             .image_reader
             .unwrap()
-            .chunks_exact(header.bytes_per_row())
+            .chunks_exact(0, header.bytes_per_row())
             .ok();
 
         let rows = ChunkReaderWrapper::<R> {

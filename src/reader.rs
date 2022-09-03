@@ -29,7 +29,7 @@ where
 
     /// Returns a double ended iterator that can iterate in chunks of size
     /// `stride`
-    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
+    fn chunks_exact(&'a self, start_addr: usize, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
 }
 
 /// BmpReader errors
@@ -43,6 +43,8 @@ pub enum BmpReaderError {
     BufferTooSmall,
     /// This instance of the reader is null
     NullReader,
+    /// Requested address too large
+    AddressOutOfBounds,
 }
 
 pub trait BmpReaderChunkIterator
@@ -80,10 +82,18 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
         Ok(())
     }
 
-    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError> {
+    fn chunks_exact(
+        &'a self,
+        start_addr: usize,
+        stride: usize,
+    ) -> Result<Self::IntoIter, BmpReaderError> {
         if stride > Self::INTERNAL_BUFFER_SIZE {
             return Err(BmpReaderError::RequestedChunkTooLarge);
         }
+        if start_addr > self.image_data.len() {
+            return Err(BmpReaderError::AddressOutOfBounds);
+        }
+        let index = if start_addr == 0 { MAX } else { start_addr - 1 };
         Ok(SliceReaderIterator {
             reader: self,
             stride,
@@ -91,7 +101,7 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
             // get() is invoked.
             // rindex will start at file_size and end at MAX
             // index will start at  MAX       and end at file_size
-            index: MAX,
+            index,
             rindex: self.image_data.len(),
         })
     }
@@ -174,14 +184,9 @@ mod tests {
 
     #[test]
     fn test_into_iter() {
-        let mut image_data: [u8; 1000] = [0u8; 1000];
-        let _count = image_data
-            .iter_mut()
-            .enumerate()
-            .map(|(i, v)| *v = i as u8)
-            .count();
+        let image_data: [u8; 1000] = core::array::from_fn(|i| i as u8);
         let reader = SliceReader::new(&image_data[..]);
-        let iter = &mut reader.chunks_exact(1).unwrap();
+        let iter = &mut reader.chunks_exact(0,1).unwrap();
         assert_eq!(iter.next().unwrap()[0], 0u8);
         assert_eq!(iter.next().unwrap()[0], 1u8);
         assert_eq!(iter.next().unwrap()[0], 2u8);
@@ -190,14 +195,9 @@ mod tests {
 
     #[test]
     fn test_stride() {
-        let mut image_data: [u8; 1000] = [0u8; 1000];
-        let _count = image_data
-            .iter_mut()
-            .enumerate()
-            .map(|(i, v)| *v = i as u8)
-            .count();
+        let image_data: [u8; 1000] = core::array::from_fn(|i| i as u8);
         let reader = SliceReader::new(&image_data[..]);
-        let iter = &mut reader.chunks_exact(2).unwrap();
+        let iter = &mut reader.chunks_exact(0,2).unwrap();
         assert_eq!(iter.next().unwrap()[..], [0u8, 1u8][..]);
         assert_eq!(iter.next().unwrap()[..], [2u8, 3u8][..]);
         assert_eq!(iter.next().unwrap()[..], [4u8, 5u8][..]);
@@ -205,14 +205,9 @@ mod tests {
 
     #[test]
     fn test_next_back() {
-        let mut image_data = [0u8; 256];
-        let _count = image_data
-            .iter_mut()
-            .enumerate()
-            .map(|(i, v)| *v = i as u8)
-            .count();
+        let image_data: [u8; 256] = core::array::from_fn(|i| i as u8);
         let reader = SliceReader::new(&image_data[..]);
-        let iter = &mut reader.chunks_exact(2).unwrap();
+        let iter = &mut reader.chunks_exact(0,2).unwrap();
         assert_eq!(iter.next_back().unwrap()[..], [254u8, 255u8][..]);
         assert_eq!(iter.next_back().unwrap()[..], [252u8, 253u8][..]);
         assert_eq!(iter.next_back().unwrap()[..], [250u8, 251u8][..]);
@@ -220,12 +215,7 @@ mod tests {
 
     #[test]
     fn test_chunk_reader() {
-        let mut image_data: [u8; 1000] = [0u8; 1000];
-        let _count = image_data
-            .iter_mut()
-            .enumerate()
-            .map(|(i, v)| *v = i as u8)
-            .count();
+        let image_data: [u8; 1000] = core::array::from_fn(|i| i as u8);
         let reader = SliceReader::new(&image_data[..]);
         let mut buffer = [0u8; 3];
         assert_eq!(reader.read(2..5, &mut buffer), Ok(()));
