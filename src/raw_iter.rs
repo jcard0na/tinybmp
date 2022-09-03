@@ -1,4 +1,4 @@
-use core::{iter, marker::PhantomData, slice};
+use core::{cell::Ref, iter, marker::PhantomData, slice};
 
 use embedded_graphics::{
     iterator::raw::RawDataSlice,
@@ -6,7 +6,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::{rectangle, Rectangle},
 };
-use streaming_iterator::{DoubleEndedStreamingIterator, StreamingIterator};
 
 use crate::{
     header::{Bpp, RowOrder},
@@ -39,18 +38,18 @@ where
 impl<'a, R> ChunkReaderWrapper<'a, R>
 where
     R: BmpReader<'a>,
-    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedIterator<Item = Ref<'a, [u8]>>,
 {
-    fn next(&'a mut self) -> Option<&'a [u8]> {
+    fn next(&'a mut self) -> Option<Ref<'a, [u8]>> {
         match &mut self.iter2 {
             Some(iter2) => iter2.next(),
-            None => self.iter1.next(),
+            None => None, //self.iter1.next(),
         }
     }
-    fn next_back(&'a mut self) -> Option<&'a [u8]> {
+    fn next_back(&'a mut self) -> Option<Ref<'a, [u8]>> {
         match &mut self.iter2 {
             Some(iter2) => iter2.next_back(),
-            None => self.iter1.next_back(),
+            None => None, // self.iter1.next_back(),
         }
     }
 }
@@ -90,14 +89,14 @@ impl<'a, I, R> Iterator for RawColors<'a, I, R>
 where
     RawDataSlice<'a, I, LittleEndian>: IntoIterator<Item = I>,
     R: BmpReader<'a>,
-    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedIterator<Item = Ref<'a, [u8]>>,
 {
     type Item = I;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.current_row.next().or_else(|| {
             let next_row = match self.row_order {
-                RowOrder::TopDown => None, // self.rows.next(),
+                RowOrder::TopDown => None,  // self.rows.next(),
                 RowOrder::BottomUp => None, // self.rows.next_back(),
             }?;
 
@@ -155,7 +154,7 @@ where
 impl<'a, R> Iterator for RawPixels<'a, R>
 where
     R: BmpReader<'a>,
-    <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+    <R as BmpReader<'a>>::IntoIter: DoubleEndedIterator<Item = Ref<'a, [u8]>>,
 {
     type Item = RawPixel;
 

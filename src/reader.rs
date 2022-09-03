@@ -1,6 +1,6 @@
+use core::cell::{Ref, RefCell};
 use core::ops::Range;
 use core::usize::MAX;
-use streaming_iterator::{DoubleEndedStreamingIterator, StreamingIterator};
 
 /// BMP file reader
 ///
@@ -13,7 +13,7 @@ use streaming_iterator::{DoubleEndedStreamingIterator, StreamingIterator};
 /// Helper trait to load BMP images from files.
 pub trait BmpReader<'a>
 where
-    <Self as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+    <Self as BmpReader<'a>>::IntoIter: DoubleEndedIterator<Item = Ref<'a, [u8]>>,
 {
     /// Iterator that will be returned by chunks_exact()
     type IntoIter;
@@ -21,13 +21,15 @@ where
     /// Internal buffer used to store a single image row.
     const INTERNAL_BUFFER_SIZE: usize;
 
-    /// Read a chunk from file into internal buffer
-    /// into the provided buffer.
+    /// Read a chunk from file into the provided buffer.
     fn read(&self, positions: Range<usize>, buffer: &mut [u8]) -> Result<(), BmpReaderError>;
+
+    /// Read a chunk from file into internal buffer
+    fn buffered_read(&self, positions: Range<usize>) -> Result<Ref<'_, [u8]>, BmpReaderError>;
 
     /// Returns a double ended iterator that can iterate in chunks of size
     /// `stride`
-    fn chunks_exact(&self, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
+    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError>;
 }
 
 /// BmpReader errors
@@ -45,14 +47,11 @@ pub enum BmpReaderError {
 
 pub trait BmpReaderChunkIterator
 where
-    Self: DoubleEndedStreamingIterator,
+    Self: DoubleEndedIterator,
 {
 }
 
 // Implementation of the above traits in a reader for memory slices follow
-
-impl BmpReaderChunkIterator for SliceReaderIterator<'_> {
-}
 
 /// An implementation of the BmpReader that reads from a [u8] slice.  This is
 /// the default reader.
@@ -61,7 +60,7 @@ impl BmpReaderChunkIterator for SliceReaderIterator<'_> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliceReader<'a> {
     image_data: &'a [u8],
-    buffer: [u8; SliceReader::INTERNAL_BUFFER_SIZE],
+    buffer: RefCell<[u8; SliceReader::INTERNAL_BUFFER_SIZE]>,
 }
 
 impl<'a> BmpReader<'a> for SliceReader<'a> {
@@ -81,12 +80,12 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
         Ok(())
     }
 
-    fn chunks_exact(&self, stride: usize) -> Result<Self::IntoIter, BmpReaderError> {
+    fn chunks_exact(&'a self, stride: usize) -> Result<Self::IntoIter, BmpReaderError> {
         if stride > Self::INTERNAL_BUFFER_SIZE {
             return Err(BmpReaderError::RequestedChunkTooLarge);
         }
         Ok(SliceReaderIterator {
-            reader: self.clone(),
+            reader: self,
             stride,
             // Note advance() will set these indices correctly before
             // get() is invoked.
@@ -96,79 +95,76 @@ impl<'a> BmpReader<'a> for SliceReader<'a> {
             rindex: self.image_data.len(),
         })
     }
+
+    fn buffered_read(&self, positions: Range<usize>) -> Result<Ref<'_, [u8]>, BmpReaderError> {
+        let mut read_size = positions.end - positions.start;
+        // temporary mutability design pattern
+        {
+            let mut buffer = self.buffer.borrow_mut();
+            let mut positions = positions;
+            if read_size > buffer.len() {
+                read_size -= buffer.len() - read_size;
+                positions = positions.start..(positions.end - buffer.len() + read_size);
+            }
+            let _ = &buffer[0..read_size].copy_from_slice(&self.image_data[positions]);
+        }
+        Ok(Ref::map(self.buffer.borrow(), |s| &s[0..read_size]))
+    }
 }
 
 #[derive(Debug)]
 pub struct SliceReaderIterator<'a> {
-    reader: SliceReader<'a>,
+    reader: &'a SliceReader<'a>,
     index: usize,
     stride: usize,
     rindex: usize,
 }
 
-impl<'a> StreamingIterator for SliceReaderIterator<'a> {
-    type Item = [u8];
+impl<'a> Iterator for SliceReaderIterator<'a> {
+    type Item = Ref<'a, [u8]>;
 
-    fn advance(&mut self) {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.index == MAX {
             self.index = 0;
         } else {
             self.index += self.stride;
         }
-        // Updating the internal buffer from I/O operation will happen here
-        // For SliceReaderIterator, we just copy a chunk from the Reader's slice
-        let range = self.index..self.index + self.stride;
-
-        let mut buffer = [0u8; SliceReader::INTERNAL_BUFFER_SIZE];
-        let _ = self.reader.read(range, &mut buffer[0..self.stride]);
-        self.reader.buffer[0..self.stride].copy_from_slice(&buffer[0..self.stride]);
-        // TODO: handle read errors here
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
         if self.index + self.stride - 1 >= self.rindex {
             return None;
         }
-        Some(&self.reader.buffer[0..self.stride])
-    }
-
-    fn next(&mut self) -> Option<&Self::Item> {
-        self.advance();
-        (*self).get()
+        // Updating the internal buffer from I/O operation will happen here
+        // For SliceReaderIterator, we just copy a chunk from the Reader's slice
+        let range = self.index..self.index + self.stride;
+        self.reader.buffered_read(range).ok()
+        // TODO: handle read errors
     }
 }
 
-impl<'a> DoubleEndedStreamingIterator for SliceReaderIterator<'a> {
-    fn advance_back(&mut self) {
+impl<'a> DoubleEndedIterator for SliceReaderIterator<'a> {
+    fn next_back(&mut self) -> Option<Ref<'a, [u8]>> {
         if self.rindex == 0 {
             self.rindex = MAX;
         } else {
             self.rindex -= self.stride;
         }
-        // Updating the internal buffer from I/O operation will happen here
-        // For SliceReaderIterator, we just copy a chunk from the Reader's slice
-        let range = self.rindex..self.rindex + self.stride;
-        let mut buffer = [0u8; SliceReader::INTERNAL_BUFFER_SIZE];
-        let _ = self.reader.read(range, &mut buffer[0..self.stride]);
-        self.reader.buffer[0..self.stride].copy_from_slice(&buffer[0..self.stride]);
-        // TODO: handle read errors here
-    }
-
-    fn next_back(&mut self) -> Option<&Self::Item> {
-        self.advance_back();
         if (self.index != MAX && self.index >= self.rindex - self.stride + 1) || self.rindex == MAX
         {
             return None;
         }
+        let range = self.rindex..self.rindex + self.stride;
         // Updating the internal buffer from I/O operation will happen here
-        Some(&self.reader.buffer[0..self.stride])
+        self.reader.buffered_read(range).ok()
+        // TODO: handle read errors
     }
 }
 
 impl<'a> SliceReader<'a> {
     /// Creates a new slice reader from a given slice containing a BMP image
     pub fn new(slice: &'a [u8]) -> Self {
-        SliceReader { image_data: slice , buffer: [0u8; SliceReader::INTERNAL_BUFFER_SIZE]}
+        SliceReader {
+            image_data: slice,
+            buffer: RefCell::new([0u8; SliceReader::INTERNAL_BUFFER_SIZE]),
+        }
     }
 }
 

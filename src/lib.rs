@@ -134,7 +134,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::private_intra_doc_links)]
 
-use core::marker::PhantomData;
+use core::{cell::Ref, marker::PhantomData};
 
 use embedded_graphics::{
     pixelcolor::{
@@ -162,7 +162,6 @@ pub use iter::Pixels;
 pub use raw_bmp::RawBmp;
 pub use raw_iter::{RawPixel, RawPixels};
 pub use reader::{BmpReader, BmpReaderError, SliceReader};
-use streaming_iterator::DoubleEndedStreamingIterator;
 
 /// A BMP-format bitmap.
 ///
@@ -221,7 +220,7 @@ where
     fn draw<D>(&self, target: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = C>,
-        <R as BmpReader<'a>>::IntoIter: DoubleEndedStreamingIterator<Item = [u8]>,
+        <R as BmpReader<'a>>::IntoIter: DoubleEndedIterator<Item = Ref<'a, [u8]>>,
     {
         let area = self.bounding_box();
 
